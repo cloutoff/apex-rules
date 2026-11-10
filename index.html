@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Racing corners: brake, throttle and gears</title>
+<style>
+:root{--bg:#f7f6f3;--surface-1:#f1efe8;--surface-2:#ffffff;--border:rgba(11,11,11,.12);--border-strong:rgba(11,11,11,.28);--text-primary:#141413;--text-secondary:#52514e;--text-muted:#898781;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141413;--surface-1:#1f1f1d;--surface-2:#262624;--border:rgba(255,255,255,.12);--border-strong:rgba(255,255,255,.3);--text-primary:#f0efec;--text-secondary:#c3c2b7;--text-muted:#898781;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#141413;--surface-1:#1f1f1d;--surface-2:#262624;--border:rgba(255,255,255,.12);--border-strong:rgba(255,255,255,.3);--text-primary:#f0efec;--text-secondary:#c3c2b7;--text-muted:#898781;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text-primary);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;line-height:1.6}
+main{max-width:760px;margin:0 auto;padding:28px 18px 40px}
+h1{font-size:26px;font-weight:500;margin:0 0 6px}
+p.lead{margin:0 0 20px;color:var(--text-secondary);font-size:15px}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;align-items:center;gap:12px;padding:8px 0 10px}
+button{font:inherit;font-size:14px;color:var(--text-primary);background:transparent;border:1px solid var(--border-strong);border-radius:8px;padding:7px 14px;cursor:pointer;min-width:92px}
+button:hover{background:var(--surface-1)}
+input[type=range]{flex:1;accent-color:#378ADD}
+.card{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:0 0 14px}
+.hd{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:12px}
+.row{display:grid;grid-template-columns:minmax(0,190px) minmax(0,1fr);gap:14px;align-items:center}
+.lg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--text-secondary);margin:0 0 16px}
+.lg span{display:flex;align-items:center;gap:6px}
+.sq{width:10px;height:10px;border-radius:2px;display:inline-block}
+.dt{width:8px;height:8px;border-radius:50%;display:inline-block}
+.nm{font-size:16px;font-weight:500}.sb{font-size:13px;color:var(--text-secondary)}
+footer{margin-top:24px;font-size:13px;color:var(--text-muted)}
+@media (max-width:560px){.row{grid-template-columns:1fr}.row svg:first-child{max-width:240px;margin:0 auto}}
+</style>
+</head>
+<body>
+<main>
+<h1>Racing corners</h1>
+<p class="lead">Watch a car brake, downshift and get back on the power through a soft, a medium and a hard corner. Press play or drag the slider to scrub through each one.</p>
+<div class="bar">
+  <button id="pp" aria-label="Pause"><span id="ppt">&#10073;&#10073; Pause</span></button>
+  <input type="range" id="sc" min="0" max="1000" value="0" step="1" aria-label="Position through the corner">
+</div>
+<div class="lg">
+  <span><b class="sq" style="background:#E24B4A"></b>Brake pedal (left foot)</span>
+  <span><b class="sq" style="background:#1D9E75"></b>Throttle pedal (right foot)</span>
+  <span><b class="sq" style="background:#EF9F27"></b>Downshift (−)</span>
+  <span><b class="sq" style="background:#7F77DD"></b>Upshift (+)</span>
+  <span><b class="dt" style="background:#E24B4A"></b>Braking zone</span>
+  <span><b class="dt" style="background:#1D9E75"></b>On throttle</span>
+  <span><b class="dt" style="background:#B4B2A9"></b>Lift or coast</span>
+</div>
+<div id="cards"></div>
+<footer>Illustrative numbers, not data from a specific car or circuit.</footer>
+</main>
+
+<script>
+const NS='http://www.w3.org/2000/svg';
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const sm=(t,a,b)=>{const x=clamp((t-a)/(b-a));return x*x*(3-2*x)};
+const mk=(tag,at,par)=>{const e=document.createElementNS(NS,tag);for(const k in at)e.setAttribute(k,at[k]);if(par)par.appendChild(e);return e};
+const COL={th:'#1D9E75',br:'#E24B4A',dn:'#EF9F27',up:'#7F77DD'};
+const re=/^M\s*[\d.]+\s+[\d.]+\s*/;
+
+const C=[
+{name:'Soft corner',sub:'Light brake, one downshift (7 to 6)',
+ p:['M60 185 L60 120','M60 120 C60 85 80 65 105 45','M105 45 L140 12'],
+ b0:.25,bk:.45,be:.40,ti:.38,ap:.47,t0:.47,t1:.64,ex:.64,fl:.35,sd:45,ve:285,vm:235,vx:285,
+ g:[[0,7],[.30,6],[.62,7]]},
+{name:'Medium corner',sub:'Firm brake, three downshifts (7 to 4)',
+ p:['M35 185 L35 100','M35 100 C35 55 65 40 110 40','M110 40 L185 40'],
+ b0:.20,bk:.80,be:.46,ti:.40,ap:.52,t0:.54,t1:.76,ex:.72,fl:0,sd:140,ve:285,vm:125,vx:230,
+ g:[[0,7],[.24,6],[.30,5],[.37,4],[.66,5],[.78,6],[.90,7]]},
+{name:'Hard corner',sub:'Maximum brake, five downshifts (7 to 2)',
+ p:['M70 185 L70 70','M70 70 C70 25 130 25 130 70','M130 70 L130 185'],
+ b0:.15,bk:1,be:.50,ti:.42,ap:.56,t0:.58,t1:.84,ex:.80,fl:0,sd:270,ve:285,vm:65,vx:190,
+ g:[[0,7],[.20,6],[.25,5],[.30,4],[.36,3],[.42,2],[.64,3],[.72,4],[.80,5],[.90,6]]}
+];
+
+function gearAt(c,t){let g=c.g[0][1];for(const k of c.g)if(t>=k[0])g=k[1];return g}
+function sig(c,t){
+  const brake=c.bk*sm(t,c.b0,c.b0+.03)*(1-sm(t,c.b0+(c.be-c.b0)*.35,c.be));
+  const drop=sm(t,c.b0-.01,c.b0+.02),rise=sm(t,c.t0,c.t1);
+  const thr=1-(1-c.fl)*drop*(1-rise);
+  const steer=c.sd*sm(t,c.ti,c.ap)*(1-sm(t,c.t0,c.ex));
+  const v=c.ve-(c.ve-c.vm)*sm(t,c.b0,c.ap)+(c.vx-c.vm)*sm(t,c.t0,1);
+  return {brake,thr,steer,g:gearAt(c,t),v};
+}
+function phase(c,t){
+  if(t<c.b0)return 'Straight';
+  if(t<c.ti)return 'Braking and downshifts';
+  if(t<c.ap)return 'Turn-in, trail braking';
+  if(t<c.t0)return 'Apex';
+  return 'Throttle on, upshifts';
+}
+function interp(kf,a,b,x){
+  for(let i=1;i<kf.length;i++){
+    if(x<=kf[i][a]||i===kf.length-1){
+      const p=kf[i-1],q=kf[i];const d=q[a]-p[a];
+      return p[b]+(d?(x-p[a])/d:0)*(q[b]-p[b]);
+    }
+  }
+}
+
+const root=document.getElementById('cards');
+const upd=[];
+
+C.forEach((c,i)=>{
+  const card=document.createElement('div');card.className='card';
+  card.innerHTML='<div class="hd"><div><div class="nm">'+c.name+'</div><div class="sb">'+c.sub+'</div></div><div style="text-align:right"><div class="nm" id="sp'+i+'"></div><div class="sb" id="ph'+i+'"></div></div></div><div class="row"><svg id="tk'+i+'" viewBox="0 0 200 190" width="100%" role="img" aria-label="Top-down view of the '+c.name.toLowerCase()+' with a moving car"></svg><svg id="tl'+i+'" viewBox="0 0 440 190" width="100%" role="img" aria-label="Brake pedal, throttle pedal and gear indicator for the '+c.name.toLowerCase()+'"></svg></div>';
+  root.appendChild(card);
+
+  const tk=card.querySelector('#tk'+i);
+  const full=c.p[0]+' '+c.p[1].replace(re,'')+' '+c.p[2].replace(re,'');
+  mk('path',{d:full,fill:'none',style:'stroke:var(--border-strong);stroke-width:30;stroke-linejoin:round'},tk);
+  mk('path',{d:full,fill:'none',style:'stroke:var(--surface-1);stroke-width:27;stroke-linejoin:round'},tk);
+  const road=mk('path',{d:full,fill:'none',style:'stroke:var(--border-strong);stroke-width:1;stroke-dasharray:5 5'},tk);
+  const tot=road.getTotalLength();
+  const ls=c.p.map(d=>{const p=mk('path',{d},tk);const l=p.getTotalLength();p.remove();return l});
+  const f1=ls[0]/tot,f2=(ls[0]+ls[1]/2)/tot,f3=(ls[0]+ls[1])/tot;
+  const kf=[[0,0],[c.b0,f1*.6],[c.ti,f1],[c.ap,f2],[c.ex,f3],[1,1]];
+  const pos=t=>interp(kf,0,1,t),inv=u=>interp(kf,1,0,u);
+
+  for(let n=0;n<=64;n++){
+    const u=n/64,s=sig(c,inv(u)),p=road.getPointAtLength(u*tot);
+    const col=s.brake>.05?COL.br:(s.thr>.5?COL.th:'#B4B2A9');
+    mk('circle',{cx:p.x,cy:p.y,r:2.2,fill:col},tk);
+  }
+
+  const car=mk('g',{},tk);
+  const dk='fill:var(--text-primary)';
+  mk('rect',{x:-12,y:-4.5,width:2.5,height:9,rx:.5,style:dk},car);
+  mk('rect',{x:-9,y:-6.2,width:5,height:2.8,rx:.8,style:dk},car);
+  mk('rect',{x:-9,y:3.4,width:5,height:2.8,rx:.8,style:dk},car);
+  mk('rect',{x:-10,y:-2.2,width:19,height:4.4,rx:2,fill:'#888780'},car);
+  mk('polygon',{points:'9,-1.6 12.5,-.6 12.5,.6 9,1.6',fill:'#888780'},car);
+  mk('rect',{x:12.5,y:-5,width:2.2,height:10,rx:.5,style:dk},car);
+  const fw1=mk('g',{},car),fw2=mk('g',{},car);
+  [fw1,fw2].forEach(w=>mk('rect',{x:-2.5,y:-1.4,width:5,height:2.8,rx:.8,style:dk},w));
+  const bl=mk('rect',{x:-12.3,y:-1.6,width:1.2,height:3.2,fill:'#E24B4A'},car);
+
+  const tl=card.querySelector('#tl'+i);
+  const txt=(x,y,size,wt,sty,parent)=>mk('text',{x,y,'text-anchor':'middle',style:'font-size:'+size+'px;font-weight:'+wt+';'+sty},parent||tl);
+  const deg=Math.PI/180,floorY=166,L1=58,L2=58,seat='fill:var(--surface-1);stroke:var(--border-strong)',shoe='-30,10 10,10 13,0 -6,-10 -14,-24 -30,-24';
+  txt(75,14,12,400,'fill:var(--text-secondary)').textContent='Brake (left foot)';
+  txt(222,14,12,400,'fill:var(--text-secondary)').textContent='Throttle (right foot)';
+  mk('line',{x1:0,y1:floorY,x2:292,y2:floorY,style:'stroke:var(--border-strong);stroke-width:2'},tl);
+  const mkLeg=(hip)=>{
+    const leg=mk('path',{fill:'none',style:'stroke:#888780;stroke-width:13;stroke-linecap:round;stroke-linejoin:round'},tl);
+    return A=>{
+      const dx=A[0]-hip[0],dy=A[1]-hip[1],r=Math.hypot(dx,dy),d=clamp(r,1,L1+L2-1),ux=dx/r,uy=dy/r;
+      const a=(L1*L1-L2*L2+d*d)/(2*d),h=Math.sqrt(Math.max(0,L1*L1-a*a));
+      const k=[hip[0]+ux*a+uy*h,hip[1]+uy*a-ux*h];
+      leg.setAttribute('d','M'+hip[0]+' '+hip[1]+'L'+k[0].toFixed(1)+' '+k[1].toFixed(1)+'L'+A[0].toFixed(1)+' '+A[1].toFixed(1));
+    };
+  };
+  const bH=[8,64],bP=[88,20],bL=112;
+  mk('rect',{x:-4,y:72,width:46,height:12,rx:5,style:seat},tl);
+  const bg=mk('g',{},tl);
+  mk('line',{x1:0,y1:0,x2:0,y2:bL-20,style:'stroke:var(--text-secondary);stroke-width:4;stroke-linecap:round'},bg);
+  const bPad=mk('rect',{x:-4,y:bL-28,width:8,height:36,rx:3,fill:COL.br},bg);
+  mk('circle',{cx:0,cy:0,r:4,style:'fill:var(--text-secondary)'},bg);
+  const bLeg=mkLeg(bH);
+  const bFoot=mk('polygon',{points:shoe,style:'fill:var(--text-primary)'},tl);
+  const bVal=txt(75,186,14,500,'fill:var(--text-primary)');
+  const bSet=v=>{
+    const th=v*24*deg,cs=Math.cos(th),sn=Math.sin(th),lx=-17,ly=bL-10;
+    bg.setAttribute('transform','translate(88 20) rotate('+(-v*24).toFixed(1)+')');
+    bPad.setAttribute('fill-opacity',(.35+.65*v).toFixed(2));
+    const B=[bP[0]+lx*cs+ly*sn,bP[1]-lx*sn+ly*cs];
+    bFoot.setAttribute('transform','translate('+B[0].toFixed(1)+' '+B[1].toFixed(1)+')');
+    bLeg([B[0]-24,B[1]-14]);
+    bVal.textContent=Math.round(v*100)+'%';
+  };
+  const tH=[158,64],tP=[238,floorY];
+  mk('rect',{x:146,y:72,width:46,height:12,rx:5,style:seat},tl);
+  const tg=mk('g',{},tl);
+  const tPlate=mk('rect',{x:0,y:-4,width:72,height:8,rx:3,fill:COL.th},tg);
+  mk('circle',{cx:0,cy:0,r:5,style:'fill:var(--text-secondary)'},tg);
+  const tLeg=mkLeg(tH);
+  const tFoot=mk('polygon',{points:shoe,style:'fill:var(--text-primary)'},tl);
+  const tVal=txt(222,186,14,500,'fill:var(--text-primary)');
+  const tSet=v=>{
+    const an=-68+20*v,r=an*deg,cs=Math.cos(r),sn=Math.sin(r),f=20*v*deg;
+    tg.setAttribute('transform','translate('+tP[0]+' '+tP[1]+') rotate('+an.toFixed(1)+')');
+    tPlate.setAttribute('fill-opacity',(.35+.65*v).toFixed(2));
+    const B=[tP[0]+56*cs+14*sn,tP[1]+56*sn-14*cs];
+    tFoot.setAttribute('transform','translate('+B[0].toFixed(1)+' '+B[1].toFixed(1)+') rotate('+(20*v).toFixed(1)+')');
+    tLeg([B[0]-24*Math.cos(f)+14*Math.sin(f),B[1]-24*Math.sin(f)-14*Math.cos(f)]);
+    tVal.textContent=Math.round(v*100)+'%';
+  };
+
+  txt(340,14,12,400,'fill:var(--text-secondary)').textContent='Gear';
+  mk('rect',{x:300,y:26,width:80,height:136,rx:12,style:'fill:var(--surface-1);stroke:var(--border-strong);stroke-width:1'},tl);
+  const cUp=mk('circle',{cx:340,cy:56,r:16,fill:COL.up,opacity:0},tl);
+  const cDn=mk('circle',{cx:340,cy:132,r:16,fill:COL.dn,opacity:0},tl);
+  const tUp=txt(340,65,26,500,'fill:var(--text-muted)');tUp.textContent='+';
+  const tDn=txt(340,141,26,500,'fill:var(--text-muted)');tDn.textContent='\u2212';
+  const tG=txt(340,109,40,500,'fill:var(--text-primary)');
+  const tS=txt(340,186,12,400,'fill:var(--text-secondary)');
+
+  const spEl=card.querySelector('#sp'+i),phEl=card.querySelector('#ph'+i);
+  upd.push(t=>{
+    const s=sig(c,t),len=pos(t)*tot;
+    const p=road.getPointAtLength(len),a=road.getPointAtLength(Math.max(0,len-1)),b=road.getPointAtLength(Math.min(tot,len+1));
+    const ang=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;
+    car.setAttribute('transform','translate('+p.x.toFixed(1)+' '+p.y.toFixed(1)+') rotate('+ang.toFixed(1)+')');
+    const wa=(s.steer/15).toFixed(1);
+    fw1.setAttribute('transform','translate(6 -4.7) rotate('+wa+')');
+    fw2.setAttribute('transform','translate(6 4.7) rotate('+wa+')');
+    bl.setAttribute('opacity',(.15+.85*Math.min(1,s.brake)).toFixed(2));
+    bSet(s.brake);tSet(s.thr);
+    const prev=gearAt(c,Math.max(0,t-.035));
+    const up=s.g>prev,dn=s.g<prev;
+    cUp.setAttribute('opacity',up?.9:0);cDn.setAttribute('opacity',dn?.9:0);
+    tUp.style.fill=up?'#26215C':'var(--text-muted)';
+    tDn.style.fill=dn?'#412402':'var(--text-muted)';
+    tG.textContent=s.g;
+    tS.textContent=up?'Upshift':(dn?'Downshift':'Hold');
+    spEl.textContent=Math.round(s.v)+' km/h';
+    phEl.textContent=phase(c,t);
+  });
+});
+
+let t=0,playing=true,last=null,hold=0;
+const sc=document.getElementById('sc'),pp=document.getElementById('pp'),ppt=document.getElementById('ppt');
+const render=()=>{upd.forEach(f=>f(t));sc.value=Math.round(t*1000)};
+const setPlay=v=>{playing=v;ppt.innerHTML=v?'&#10073;&#10073; Pause':'&#9654; Play';pp.setAttribute('aria-label',v?'Pause':'Play')};
+pp.addEventListener('click',()=>setPlay(!playing));
+sc.addEventListener('input',()=>{t=sc.value/1000;hold=0;setPlay(false);render()});
+function loop(ts){
+  if(playing&&last!==null){
+    const dt=ts-last;
+    if(t>=1){hold+=dt;if(hold>900){t=0;hold=0}}
+    else t=Math.min(1,t+dt/10000);
+  }
+  last=ts;render();requestAnimationFrame(loop);
+}
+render();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
